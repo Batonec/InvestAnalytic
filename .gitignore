@@ -15,3 +15,7 @@ investor-streisand-*
 *.key
 *.p12
 
+# local agent/tooling state
+.claude/
+.agents/
+

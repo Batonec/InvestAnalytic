@@ -1,4 +1,4 @@
-# InvestAnalytic
+# tinkoff-wealth-mcp
 
 > **Суть проекта:** это MCP-сервер, заточенный под мои личные нужды для **Тинькофф
 > Инвестиций** — мой портфель, мои цели, моя стратегия. Подключается к Claude/ChatGPT,
@@ -80,5 +80,5 @@
 
 ---
 
-📘 **Техническая документация:** [ARCHITECTURE.md](ARCHITECTURE.md) (архитектура, схемы,
-запуск, env, тесты) · **Деплой и CI:** [DEPLOYMENT.md](DEPLOYMENT.md)
+📘 **Техническая документация:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (архитектура,
+схемы, запуск, env, тесты) · **Деплой и CI:** [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)

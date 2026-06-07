@@ -51,7 +51,7 @@ Cloudflare Tunnel (named): create a tunnel in the Cloudflare Zero Trust dashboar
 
 ## CI/CD (GitHub Actions)
 
-Workflow: [.github/workflows/ci-deploy.yml](.github/workflows/ci-deploy.yml).
+Workflow: [../.github/workflows/ci-deploy.yml](../.github/workflows/ci-deploy.yml).
 
 - **On every push & PR:** run the test suite (`python -m unittest`).
 - **On push to `main` (after tests pass):** rsync the code to the VPS, `pip install -e .`,
