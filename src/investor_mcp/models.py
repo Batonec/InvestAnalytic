@@ -168,6 +168,9 @@ class InvestorProfile:
             "max_high_risk_percent": 20,
         }
     )
+    # Long-term goals, e.g. {"target_capital": {...}, "target_monthly_income": {...},
+    # "preserve_principal": true, "income_sources": [...], "principles": [...]}.
+    goals: dict[str, Any] = field(default_factory=dict)
     notes: str = ""
 
     def to_dict(self) -> dict[str, Any]:
@@ -188,6 +191,7 @@ class InvestorProfile:
             ),
             target_allocation=list(data.get("target_allocation") or cls().target_allocation),
             limits=dict(data.get("limits") or cls().limits),
+            goals=dict(data.get("goals") or {}),
             notes=data.get("notes", ""),
         )
 
