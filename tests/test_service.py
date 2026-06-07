@@ -59,6 +59,18 @@ class InvestorServiceTest(unittest.TestCase):
         self.assertEqual(minfin[0]["priority"], "high")
         self.assertTrue(any("кредитный рейтинг" in q for q in minfin[0]["search_queries"]))
 
+    def test_context_lenses_in_brief_and_recommend(self) -> None:
+        service = InvestorService()
+
+        brief = service.get_news_digest()["data"]
+        self.assertIn("context_lenses", brief)
+        self.assertTrue(any("Геополитика" in lens["lens"] for lens in brief["context_lenses"]))
+
+        rec = service.recommend_next_action({"amount": 100_000})["data"]
+        self.assertIn("context_to_research", rec)
+        self.assertTrue(rec["context_to_research"])
+        self.assertIn("instruction_for_assistant", rec)
+
     def test_bond_calendar_lists_coupons_and_ladder(self) -> None:
         service = InvestorService()
 

@@ -19,19 +19,21 @@ load_dotenv()
 _INSTRUCTIONS = """\
 Personal investment-portfolio assistant (read-only, RU market).
 
-For ANY question about the portfolio, its risks, or "what's going on / any news",
-proactively and WITHOUT being explicitly asked:
-1) call investor_get_news_digest — it returns a research brief that is computed
-   DYNAMICALLY from the user's current holdings, concentrations and goals (their top
-   issuers/sectors, tailored search queries, and a focus derived from the data — e.g.
-   credit/rating news for over-concentrated bond issuers, earnings for equities, the
-   key rate for bond-heavy portfolios);
-2) web-search the brief's research_targets queries;
-3) summarise findings as impact on THIS portfolio: which holdings, what % is affected,
-   why it matters, and what to consider.
+For ANY question about the portfolio, its risks, news, or "what should I buy / rebalance /
+should I do X", proactively and WITHOUT being explicitly asked:
+1) call investor_get_news_digest (and, for buy/rebalance questions, investor_recommend_next_action)
+   — they return, computed DYNAMICALLY from the user's holdings/goals: research_targets
+   (top issuers/sectors with tailored queries) AND context_lenses (the macro/geopolitical/
+   commodity/credit/FX/sector factors that matter for THIS book, each with why + queries);
+2) WEB-SEARCH those targets and lenses to get the CURRENT picture (key-rate trajectory,
+   sanctions/geopolitics, oil & metals cycle, credit spreads on the over-concentrated bond
+   issuers, ruble outlook, sector regulation, equity valuations — whichever the data flags);
+3) only THEN give the answer/recommendation, weaving in that macro & political context plus
+   the user's long-term goals (profile.goals), with rationale, risks and alternatives.
 
-The server never fabricates or fetches news itself — you do the searching. Treat every
-output as analysis/scenarios, not a guaranteed-return investment recommendation."""
+The server never fabricates or fetches news/macro itself — it tells you WHAT to research; you
+do the searching and judgement. Treat every output as analysis/scenarios, not a
+guaranteed-return investment recommendation."""
 
 mcp = FastMCP("Investor MCP", instructions=_INSTRUCTIONS)
 _db_path = os.getenv("INVESTOR_MCP_STORAGE_PATH", "./data/investor_mcp.db")

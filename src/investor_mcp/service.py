@@ -568,6 +568,7 @@ class InvestorService:
             "portfolio_value": Money(round(total, 2), self.profile.base_currency).to_dict(),
             "bond_share_percent": round(bond_share, 2),
             "research_targets": targets,
+            "context_lenses": self._context_lenses(positions, total),
             "guidance": guidance,
             "events": [],  # the server does not fetch news; the client searches research_targets
             "instruction_for_assistant": (
@@ -582,6 +583,109 @@ class InvestorService:
         )
         return ok_response(summary, data, data_status=self._positions_status)
 
+    def _context_lenses(self, positions: list[Position], total: float) -> list[dict[str, Any]]:
+        """External factors to research, DERIVED from the portfolio's exposures.
+
+        The server doesn't judge macro/geopolitics/cycles — it tells the assistant which
+        of them matter for THIS book (and why), so the assistant researches the current
+        picture and folds it into advice. Everything here is data-driven, not hardcoded.
+        """
+        if not total:
+            return []
+        by_class: dict[str, float] = defaultdict(float)
+        by_sector: dict[str, float] = defaultdict(float)
+        issuer_value: dict[str, float] = defaultdict(float)
+        issuer_classes: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+        foreign = 0.0
+        for position in positions:
+            value = position.current_value.amount
+            instrument = position.instrument
+            by_class[instrument.asset_class] += value
+            by_sector[instrument.sector] += value
+            issuer_value[instrument.issuer] += value
+            issuer_classes[instrument.issuer][instrument.asset_class] += value
+            if instrument.currency != self.profile.base_currency:
+                foreign += value
+
+        def pct(value: float) -> float:
+            return round(value / total * 100, 1)
+
+        bond_share = pct(by_class.get("bond", 0))
+        stock_share = pct(by_class.get("stock", 0))
+        energy_materials = pct(by_sector.get("energy", 0) + by_sector.get("materials", 0))
+        foreign_share = pct(foreign)
+        fin_re = pct(by_sector.get("financial", 0) + by_sector.get("real_estate", 0))
+        issuer_limit = float(self.profile.limits.get("max_single_issuer_percent", 15))
+        sector_limit = float(self.profile.limits.get("max_single_sector_percent", 30))
+        over_bond_issuers = [
+            issuer for issuer, value in sorted(issuer_value.items(), key=lambda item: -item[1])
+            if issuer not in _NON_ISSUER and value / total * 100 > issuer_limit
+            and max(issuer_classes[issuer], key=issuer_classes[issuer].get) == "bond"
+        ]
+
+        lenses: list[dict[str, Any]] = []
+        if bond_share > 30:
+            lenses.append({
+                "lens": "Ставка и ДКП",
+                "priority": "high" if bond_share > 50 else "medium",
+                "why": f"{bond_share}% в облигациях — цены бумаг, реинвест купонов и рефинанс эмитентов зависят от ключевой ставки",
+                "research": ["ключевая ставка ЦБ РФ решение и траектория", "инфляция РФ ожидания", "кривая доходности ОФЗ"],
+            })
+        if over_bond_issuers:
+            names = ", ".join(over_bond_issuers[:3])
+            lenses.append({
+                "lens": "Кредитный риск / ВДО",
+                "priority": "high",
+                "why": f"облигационные эмитенты выше лимита {issuer_limit:.0f}%: {names} — кредитные спреды, риск дефолта/реструктуризации, рефинанс при высокой ставке",
+                "research": [f"{n} кредитный рейтинг и новости" for n in over_bond_issuers[:3]] + ["спреды ВДО к ОФЗ динамика"],
+            })
+        if energy_materials > 8:
+            lenses.append({
+                "lens": "Сырьевой цикл",
+                "priority": "medium",
+                "why": f"{energy_materials}% в нефтегазе/металлах — выручка эмитентов зависит от цен на сырьё",
+                "research": ["нефть Brent и Urals прогноз цены", "цены на сталь и цветные металлы", "спрос Китая на сырьё"],
+            })
+        if foreign_share > 5:
+            lenses.append({
+                "lens": "Рубль и валюта",
+                "priority": "medium",
+                "why": f"{foreign_share}% в валютных активах — переоценка зависит от курса рубля; есть риск инфраструктурных ограничений",
+                "research": ["курс рубля прогноз", "ограничения и санкции на валютные активы РФ"],
+            })
+        lenses.append({
+            "lens": "Геополитика / санкции / политика",
+            "priority": "high" if (foreign_share > 5 or fin_re > 40) else "medium",
+            "why": "российский рынок чувствителен к санкциям, геополитике и регулированию"
+            + ("; иностранные/валютные бумаги несут риск блокировок" if foreign_share > 0 else ""),
+            "research": ["санкции против РФ свежие новости", "геополитическая ситуация и российский рынок", "регулирование банков и застройщиков РФ"],
+        })
+        for sector, value in sorted(by_sector.items(), key=lambda item: -item[1]):
+            if sector in {"unknown", "cash", "government"}:
+                continue
+            share = value / total * 100
+            if share <= sector_limit:
+                continue
+            label = _sector_label(sector)
+            hint = {
+                "real_estate": "льготная ипотека, цикл цен на недвижимость, спрос и долговая нагрузка застройщиков",
+                "financial": "ключевая ставка, регулирование банков, качество кредитных портфелей",
+            }.get(sector, "отраслевое регулирование и спрос")
+            lenses.append({
+                "lens": f"Сектор: {label}",
+                "priority": "medium",
+                "why": f"{round(share, 1)}% портфеля выше лимита сектора — {hint}",
+                "research": [f"{label} РФ новости и регулирование 2026"],
+            })
+        if stock_share > 15:
+            lenses.append({
+                "lens": "Рынок акций и оценки",
+                "priority": "medium",
+                "why": f"{stock_share}% в акциях для долгосрочного роста — важны фаза рынка, оценки и дивполитика",
+                "research": ["индекс МосБиржи прогноз 2026", "дивиденды российских компаний 2026"],
+            })
+        return lenses
+
     def recommend_next_action(
         self,
         available_cash: dict[str, Any],
@@ -589,6 +693,8 @@ class InvestorService:
         max_options: int = 3,
         account_ids: list[str] | None = None,
     ) -> dict[str, Any]:
+        positions = self._positions(account_ids)
+        total = sum(position.current_value.amount for position in positions)
         analysis = self.analyze_portfolio(account_ids)["data"]
         deviations = analysis.get("goal_deviation", [])
         sorted_deviations = sorted(deviations, key=lambda item: item["deviation_percent"])
@@ -638,6 +744,14 @@ class InvestorService:
             {
                 "goal": goal,
                 "recommendations": recommendations,
+                "context_to_research": self._context_lenses(positions, total),
+                "instruction_for_assistant": (
+                    "Это скелет ребаланса по целевой аллокации. ПРЕЖДЕ чем дать финальный совет, "
+                    "изучи в вебе context_to_research (ставка/ДКП, кредитный риск ВДО, сырьевой цикл, "
+                    "рубль, геополитика/санкции, секторы, рынок акций) и учти текущую макро- и "
+                    "политическую картину, а также долгосрочные цели пользователя (profile.goals). "
+                    "Затем дай рекомендацию с обоснованием, рисками и альтернативами — не категорично."
+                ),
                 "disclaimer": "Аналитический сценарий, не гарантия результата.",
             },
         )
