@@ -179,6 +179,52 @@ class TinkoffAdapterTest(unittest.TestCase):
         self.assertEqual(share.sector, "financial")
         self.assertEqual(share.risk_level, "medium")  # shares have no risk_level -> class default
 
+    def test_map_instrument_uses_issuer_override(self) -> None:
+        pos = SimpleNamespace(instrument_uid="u", figi="f", instrument_type="bond", ticker="RU000A10BW96")
+        instr = SimpleNamespace(
+            uid="u", ticker="RU000A10BW96", name="Самолет БО-П18", currency="rub",
+            sector="real_estate", instrument_type="bond", risk_level=None, asset_uid="a1",
+        )
+        result = map_instrument(pos, instr, issuer="ГК Самолет")
+        self.assertEqual(result.issuer, "ГК Самолет")  # not the per-issue name
+
+    def test_issuer_grouped_by_brand_across_bond_series(self) -> None:
+        ns = SimpleNamespace
+
+        def mv(u, c="rub"):
+            return ns(units=u, nano=0, currency=c)
+
+        def pos(uid):
+            return ns(instrument_uid=uid, figi=uid, instrument_type="bond", ticker=uid,
+                      quantity=ns(units=1, nano=0), average_position_price=mv(1000),
+                      current_price=mv(1000), current_nkd=mv(0))
+
+        bond_asset = {"u-p18": "a1", "u-p16": "a2"}  # different assets...
+        asset_brand = {"a1": "ГК Самолет", "a2": "ГК Самолет"}  # ...same brand
+
+        class FakeAssetClient:
+            instruments = ns(
+                bond_by=lambda id_type=None, id=None: ns(instrument=ns(
+                    uid=id, ticker=id, name=f"Самолет {id}", currency="rub",
+                    sector="real_estate", instrument_type="bond", risk_level=None,
+                    asset_uid=bond_asset[id])),
+                get_asset_by=lambda id=None: ns(asset=ns(brand=ns(name=asset_brand[id]))),
+                currencies=lambda: ns(instruments=[]),
+            )
+            market_data = ns(get_last_prices=lambda instrument_id=None: ns(last_prices=[]))
+            operations = ns(get_portfolio=lambda account_id=None: ns(positions=[pos("u-p18"), pos("u-p16")]))
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        adapter = TinkoffInvestAdapter("t", client_factory=lambda: FakeAssetClient())
+        positions = adapter.get_positions(["acc-1"])
+        self.assertEqual(len(positions), 2)
+        self.assertEqual({p.instrument.issuer for p in positions}, {"ГК Самолет"})
+
     def test_map_position_adds_bond_nkd(self) -> None:
         from investor_mcp.adapters import Instrument
 

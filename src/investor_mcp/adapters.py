@@ -159,7 +159,7 @@ def map_account(raw: Any) -> Account:
     )
 
 
-def map_instrument(pos: Any, instr: Any | None) -> Instrument:
+def map_instrument(pos: Any, instr: Any | None, issuer: str | None = None) -> Instrument:
     instrument_type = getattr(pos, "instrument_type", "") or (getattr(instr, "instrument_type", "") if instr else "")
     asset_class = _ASSET_CLASS.get(instrument_type, "other")
     if instr is not None:
@@ -182,13 +182,16 @@ def map_instrument(pos: Any, instr: Any | None) -> Instrument:
     if instr is not None:
         bond_risk = _enum_short(getattr(instr, "risk_level", None), "RISK_LEVEL_")
         risk_level = {"low": "low", "moderate": "medium", "high": "high"}.get(bond_risk, risk_level)
+    # Issuer = brand/company name (shared across an issuer's instruments, e.g. all
+    # ГК Самолет bond series) so concentration groups correctly. Fall back to the
+    # instrument name when the brand is unavailable.
     return Instrument(
         instrument_id=instrument_id,
         ticker=ticker,
         name=name,
         asset_class=asset_class,
         currency=currency,
-        issuer=name,
+        issuer=issuer or name,
         sector=sector,
         risk_level=risk_level,
     )
@@ -269,6 +272,7 @@ class TinkoffInvestAdapter:
         self.sandbox = sandbox
         self._client_factory = client_factory
         self._instrument_cache: dict[str, Instrument] = {}
+        self._brand_cache: dict[str, str | None] = {}
 
     def _open(self) -> Any:
         if self._client_factory is not None:
@@ -334,9 +338,30 @@ class TinkoffInvestAdapter:
                 instr = instruments.get_instrument_by(id_type=uid_type, id=uid).instrument
         except Exception:
             instr = None
-        meta = map_instrument(pos, instr)
+        issuer = self._brand_name(client, getattr(instr, "asset_uid", "")) if instr is not None else None
+        meta = map_instrument(pos, instr, issuer=issuer)
         self._instrument_cache[uid] = meta
         return meta
+
+    def _brand_name(self, client: Any, asset_uid: str) -> str | None:
+        """Resolve an instrument's issuer/brand name via the Asset API (cached).
+
+        All instruments of one issuer share a brand (e.g. every ГК Самолет bond
+        series), so this groups issuer concentration correctly. asset_uid would NOT
+        group them — bond series have distinct assets but the same brand.
+        """
+        if not asset_uid:
+            return None
+        if asset_uid in self._brand_cache:
+            return self._brand_cache[asset_uid]
+        name: str | None = None
+        try:
+            asset = client.instruments.get_asset_by(id=asset_uid).asset
+            name = (getattr(asset.brand, "name", "") or "").strip() or None
+        except Exception:
+            name = None
+        self._brand_cache[asset_uid] = name
+        return name
 
     def list_accounts(self) -> list[Account]:
         with self._open() as client:

@@ -1,0 +1,97 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="720" viewBox="0 0 1240 720" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0f172a"/>
+      <stop offset="1" stop-color="#1e293b"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="8" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="#38bdf8"/>
+    </marker>
+    <marker id="arrowOut" markerWidth="12" markerHeight="12" refX="8" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="#34d399"/>
+    </marker>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <rect width="1240" height="720" fill="url(#bg)"/>
+
+  <!-- Title -->
+  <text x="620" y="52" fill="#f1f5f9" font-size="30" font-weight="700" text-anchor="middle">Как работает твой публичный домен через Cloudflare Tunnel</text>
+  <text x="620" y="84" fill="#94a3b8" font-size="17" text-anchor="middle">mcp.superbatonec.org &#8594; Cloudflare &#8594; cloudflared &#8594; localhost:8000</text>
+
+  <!-- ===================== USER (right) ===================== -->
+  <g filter="url(#shadow)">
+    <rect x="1000" y="300" width="200" height="150" rx="16" fill="#1e293b" stroke="#475569" stroke-width="1.5"/>
+  </g>
+  <text x="1100" y="345" font-size="44" text-anchor="middle">&#128241;</text>
+  <text x="1100" y="392" fill="#f1f5f9" font-size="20" font-weight="700" text-anchor="middle">Ты</text>
+  <text x="1100" y="418" fill="#94a3b8" font-size="13" text-anchor="middle">браузер / Claude</text>
+  <text x="1100" y="436" fill="#94a3b8" font-size="13" text-anchor="middle">телефон, ПК</text>
+
+  <!-- ===================== CLOUDFLARE (middle) ===================== -->
+  <g filter="url(#shadow)">
+    <rect x="560" y="250" width="300" height="250" rx="20" fill="#7c2d12" stroke="#f97316" stroke-width="2"/>
+  </g>
+  <text x="710" y="300" font-size="40" text-anchor="middle">&#9729;&#65039;</text>
+  <text x="710" y="338" fill="#fed7aa" font-size="22" font-weight="700" text-anchor="middle">Cloudflare</text>
+  <text x="710" y="364" fill="#fdba74" font-size="13" text-anchor="middle">отвечает за домен (DNS)</text>
+  <text x="710" y="386" fill="#fdba74" font-size="13" text-anchor="middle">даёт HTTPS-шифрование</text>
+  <text x="710" y="408" fill="#fdba74" font-size="13" text-anchor="middle">прячет реальный IP VPS</text>
+  <rect x="590" y="430" width="240" height="48" rx="10" fill="#431407" stroke="#9a3412"/>
+  <text x="710" y="450" fill="#fdba74" font-size="12.5" text-anchor="middle">держит 4 постоянных канала</text>
+  <text x="710" y="468" fill="#fdba74" font-size="12.5" text-anchor="middle">в твой туннель</text>
+
+  <!-- ===================== VPS (left) ===================== -->
+  <g filter="url(#shadow)">
+    <rect x="40" y="200" width="360" height="350" rx="20" fill="#0c4a6e" stroke="#0ea5e9" stroke-width="2"/>
+  </g>
+  <text x="220" y="240" font-size="34" text-anchor="middle">&#128421;&#65039;</text>
+  <text x="220" y="276" fill="#e0f2fe" font-size="21" font-weight="700" text-anchor="middle">Твой VPS</text>
+  <text x="220" y="298" fill="#7dd3fc" font-size="13" text-anchor="middle">89.124.83.32</text>
+
+  <!-- cloudflared box -->
+  <rect x="70" y="320" width="300" height="80" rx="12" fill="#075985" stroke="#38bdf8" stroke-width="1.5"/>
+  <text x="220" y="350" fill="#e0f2fe" font-size="17" font-weight="700" text-anchor="middle">cloudflared</text>
+  <text x="220" y="374" fill="#bae6fd" font-size="12.5" text-anchor="middle">сам звонит наружу &#8594; держит коридор</text>
+  <text x="220" y="390" fill="#bae6fd" font-size="12.5" text-anchor="middle">портов открывать НЕ надо</text>
+
+  <!-- mcp server box -->
+  <rect x="70" y="430" width="300" height="90" rx="12" fill="#14532d" stroke="#22c55e" stroke-width="1.5"/>
+  <text x="220" y="460" fill="#dcfce7" font-size="17" font-weight="700" text-anchor="middle">investor-mcp</text>
+  <text x="220" y="484" fill="#bbf7d0" font-size="12.5" text-anchor="middle">слушает ТОЛЬКО 127.0.0.1:8000</text>
+  <text x="220" y="502" fill="#bbf7d0" font-size="12.5" text-anchor="middle">снаружи напрямую недоступен &#128274;</text>
+
+  <!-- internal arrow cloudflared <-> mcp -->
+  <line x1="220" y1="400" x2="220" y2="430" stroke="#a3e635" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <text x="300" y="420" fill="#a3e635" font-size="11" text-anchor="middle">локально</text>
+
+  <!-- ===================== ARROWS user -> cloudflare (request, blue) ===================== -->
+  <path d="M995 350 L865 350" stroke="#38bdf8" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+  <text x="930" y="338" fill="#7dd3fc" font-size="12.5" text-anchor="middle">запрос</text>
+
+  <!-- cloudflare -> vps via tunnel (request goes DOWN the open channel) -->
+  <path d="M560 360 C 480 360, 470 360, 375 360" stroke="#38bdf8" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+  <text x="468" y="348" fill="#7dd3fc" font-size="12.5" text-anchor="middle">по туннелю вниз</text>
+
+  <!-- outgoing channel: cloudflared -> cloudflare (green, established outward) -->
+  <path d="M375 392 C 470 420, 490 420, 560 420" stroke="#34d399" stroke-width="3" fill="none" stroke-dasharray="2 0" marker-end="url(#arrowOut)"/>
+  <text x="468" y="440" fill="#6ee7b7" font-size="12.5" text-anchor="middle">канал открыт ИЗНУТРИ &#8594;</text>
+
+  <!-- ===================== bottom: address bar ===================== -->
+  <rect x="120" y="600" width="1000" height="70" rx="14" fill="#0b1220" stroke="#334155"/>
+  <text x="150" y="632" fill="#64748b" font-size="14">&#128274;</text>
+  <text x="180" y="632" fill="#7dd3fc" font-size="17" font-weight="600">https://mcp.superbatonec.org</text>
+  <text x="535" y="632" fill="#fbbf24" font-size="17" font-weight="700">/540a18d&#8230;eade</text>
+  <text x="745" y="632" fill="#a3e635" font-size="17" font-weight="600">/mcp</text>
+  <text x="180" y="656" fill="#64748b" font-size="12.5">домен (Cloudflare)</text>
+  <text x="535" y="656" fill="#d97706" font-size="12.5">секретный путь = пароль</text>
+  <text x="745" y="656" fill="#65a30d" font-size="12.5">сам сервер</text>
+
+  <!-- legend -->
+  <line x1="900" y1="150" x2="935" y2="150" stroke="#38bdf8" stroke-width="3" marker-end="url(#arrow)"/>
+  <text x="945" y="155" fill="#94a3b8" font-size="13">путь запроса (тебя &#8594; к серверу)</text>
+  <line x1="900" y1="178" x2="935" y2="178" stroke="#34d399" stroke-width="3" marker-end="url(#arrowOut)"/>
+  <text x="945" y="183" fill="#94a3b8" font-size="13">канал, открытый VPS наружу</text>
+</svg>

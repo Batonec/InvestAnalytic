@@ -64,8 +64,9 @@ request.
 `investor_scan_risks` flags single-**position**, single-**issuer** and single-**sector**
 concentration against the profile limits (`max_single_position_percent`,
 `max_single_issuer_percent`, `max_single_sector_percent`, `max_high_risk_percent`).
-> Known limitation: issuer concentration groups by instrument name, so multiple bond
-> issues of one issuer (e.g. several ГК Самолёт series) are not yet merged.
+Issuer concentration groups by the issuer's **brand** (resolved via the Tinkoff Asset
+API), so all instruments of one issuer — e.g. every ГК Самолёт bond series, or a
+company's ordinary and preferred shares — are merged into a single issuer.
 
 ### Security
 
