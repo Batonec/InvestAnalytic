@@ -162,6 +162,20 @@ def _money(value: Any) -> float:
     return float(getattr(value, "units", 0)) + float(getattr(value, "nano", 0)) / 1e9
 
 
+def _uid_id_type() -> Any:
+    """The UID InstrumentIdType enum, or None when the SDK isn't installed.
+
+    None is fine: the real typed lookups only run with the SDK present; without it
+    (unit tests / CI) an injected fake client ignores the id_type argument.
+    """
+    try:
+        from tinkoff.invest import InstrumentIdType
+
+        return InstrumentIdType.INSTRUMENT_ID_TYPE_UID
+    except ImportError:
+        return None
+
+
 def _date(value: Any) -> str | None:
     """Convert a Tinkoff datetime to an ISO date string; None for unset (epoch 1970)."""
     if value is None:
@@ -362,9 +376,7 @@ class TinkoffInvestAdapter:
             return self._instrument_cache[uid]
         instr = None
         try:
-            from tinkoff.invest import InstrumentIdType
-
-            uid_type = InstrumentIdType.INSTRUMENT_ID_TYPE_UID
+            uid_type = _uid_id_type()
             instrument_type = getattr(pos, "instrument_type", "")
             instruments = client.instruments
             # Typed lookups carry `sector` (and bonds `risk_level`); the unified
@@ -471,9 +483,7 @@ class TinkoffInvestAdapter:
         """
         missing = [uid for uid in instrument_uids if uid not in self._bond_cache]
         if missing:
-            from tinkoff.invest import InstrumentIdType
-
-            uid_type = InstrumentIdType.INSTRUMENT_ID_TYPE_UID
+            uid_type = _uid_id_type()
             now = datetime.now(timezone.utc)
             horizon = now + timedelta(days=370 * 5)  # up to ~5y of coupons
             with self._open() as client:
