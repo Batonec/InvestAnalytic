@@ -59,6 +59,31 @@ class InvestorServiceTest(unittest.TestCase):
         self.assertEqual(minfin[0]["priority"], "high")
         self.assertTrue(any("кредитный рейтинг" in q for q in minfin[0]["search_queries"]))
 
+    def test_goal_progress_computes_capital_income_projection(self) -> None:
+        from investor_mcp.storage import Storage
+
+        storage = Storage(":memory:")
+        service = InvestorService(storage=storage)
+        service.save_profile({
+            "risk_profile": "balanced", "horizon": "long_term",
+            "monthly_contribution": {"amount": 10_000, "currency": "RUB"},
+            "goals": {
+                "target_capital": {"amount": 1_000_000, "currency": "RUB"},
+                "target_monthly_income": {"amount": 5_000, "currency": "RUB"},
+                "annual_bonus": {"amount": 0, "currency": "RUB"},
+            },
+        })
+
+        result = service.get_goal_progress()
+
+        self.assertTrue(result["ok"])
+        data = result["data"]
+        self.assertGreater(data["capital"]["progress_percent"], 0)
+        # income = bond coupons + share dividends (both from the mock adapter)
+        self.assertGreater(data["income"]["annual_coupons"]["amount"], 0)
+        self.assertGreater(data["income"]["annual_dividends"]["amount"], 0)
+        self.assertIn("years_to_capital_target", data["projection"])
+
     def test_context_lenses_in_brief_and_recommend(self) -> None:
         service = InvestorService()
 

@@ -139,6 +139,12 @@ class MockBrokerAdapter:
                 }
         return result
 
+    def get_dividend_data(self, instrument_uids: list[str]) -> dict[str, dict]:
+        return {
+            uid: {"annual_dividend_per_share": 30.0 if uid == "SBER" else 0.0}
+            for uid in instrument_uids
+        }
+
 
 # Tinkoff instrument_type -> our asset_class.
 _ASSET_CLASS = {
@@ -328,6 +334,7 @@ class TinkoffInvestAdapter:
         self._instrument_cache: dict[str, Instrument] = {}
         self._brand_cache: dict[str, str | None] = {}
         self._bond_cache: dict[str, dict[str, Any]] = {}
+        self._dividend_cache: dict[str, dict[str, Any]] = {}
 
     def _open(self) -> Any:
         if self._client_factory is not None:
@@ -520,6 +527,32 @@ class TinkoffInvestAdapter:
                             "amortization": False, "perpetual": False, "floating": False, "coupons": [],
                         }
         return {uid: self._bond_cache[uid] for uid in instrument_uids}
+
+    def get_dividend_data(self, instrument_uids: list[str]) -> dict[str, dict[str, Any]]:
+        """Trailing-12m dividends per share, converted to base currency (cached).
+
+        A reasonable proxy for forward annual dividend income for the goal tracker.
+        """
+        missing = [uid for uid in instrument_uids if uid not in self._dividend_cache]
+        if missing:
+            now = datetime.now(timezone.utc)
+            since = now - timedelta(days=380)
+            with self._open() as client:
+                fx = self._fx_rates(client)
+                for uid in missing:
+                    annual = 0.0
+                    try:
+                        response = client.instruments.get_dividends(
+                            instrument_id=uid, from_=since, to=now + timedelta(days=5)
+                        )
+                        for dividend in response.dividends:
+                            net = getattr(dividend, "dividend_net", None)
+                            currency = (getattr(net, "currency", "") or _BASE_CURRENCY).upper()
+                            annual += _money(net) * fx.get(currency, 1.0)
+                    except Exception:
+                        annual = 0.0
+                    self._dividend_cache[uid] = {"annual_dividend_per_share": round(annual, 4)}
+        return {uid: self._dividend_cache[uid] for uid in instrument_uids}
 
 
 def build_broker_adapter() -> BrokerAdapter:

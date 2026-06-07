@@ -332,6 +332,16 @@ def investor_generate_report(
 
 
 @mcp.tool()
+def investor_get_goal_progress(
+    account_ids: list[str] | None = None,
+    expected_return_percent: float = 12.0,
+) -> CallToolResult:
+    """Progress to the user's long-term goals: capital target %, passive-income coverage
+    (coupons + dividends vs target), and a rough timeline projection."""
+    return _result(service.get_goal_progress(account_ids, expected_return_percent))
+
+
+@mcp.tool()
 def investor_get_bond_calendar(
     horizon_days: int = 90,
     account_ids: list[str] | None = None,
