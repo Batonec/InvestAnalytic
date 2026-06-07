@@ -16,7 +16,24 @@ from .storage import Storage
 
 load_dotenv()
 
-mcp = FastMCP("Investor MCP")
+_INSTRUCTIONS = """\
+Personal investment-portfolio assistant (read-only, RU market).
+
+For ANY question about the portfolio, its risks, or "what's going on / any news",
+proactively and WITHOUT being explicitly asked:
+1) call investor_get_news_digest — it returns a research brief that is computed
+   DYNAMICALLY from the user's current holdings, concentrations and goals (their top
+   issuers/sectors, tailored search queries, and a focus derived from the data — e.g.
+   credit/rating news for over-concentrated bond issuers, earnings for equities, the
+   key rate for bond-heavy portfolios);
+2) web-search the brief's research_targets queries;
+3) summarise findings as impact on THIS portfolio: which holdings, what % is affected,
+   why it matters, and what to consider.
+
+The server never fabricates or fetches news itself — you do the searching. Treat every
+output as analysis/scenarios, not a guaranteed-return investment recommendation."""
+
+mcp = FastMCP("Investor MCP", instructions=_INSTRUCTIONS)
 _db_path = os.getenv("INVESTOR_MCP_STORAGE_PATH", "./data/investor_mcp.db")
 _cache_ttl = int(os.getenv("INVESTOR_MCP_CACHE_TTL_SECONDS", "86400"))  # default: 1 day
 service = InvestorService(
@@ -267,7 +284,12 @@ def investor_get_news_digest(
     account_ids: list[str] | None = None,
     importance_min: str = "medium",
 ) -> CallToolResult:
-    """Return portfolio-related news and events digest."""
+    """Dynamic research brief: portfolio-derived targets + tailored search queries.
+
+    The server does NOT fetch news; it computes WHAT to look up (top issuers/sectors,
+    rate sensitivity) from the current holdings. The assistant then web-searches the
+    returned research_targets and reports the impact on the portfolio.
+    """
     return _result(service.get_news_digest(period, from_date, to_date, account_ids, importance_min))
 
 

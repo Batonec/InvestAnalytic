@@ -43,6 +43,22 @@ class InvestorServiceTest(unittest.TestCase):
         self.assertGreaterEqual(len(recommendations), 1)
         self.assertIn("amount", recommendations[0])
 
+    def test_news_digest_returns_dynamic_research_brief(self) -> None:
+        service = InvestorService()
+
+        result = service.get_news_digest()
+
+        self.assertTrue(result["ok"])
+        data = result["data"]
+        self.assertGreater(len(data["research_targets"]), 0)
+        self.assertEqual(data["events"], [])  # server doesn't fetch news itself
+        # bond issuer over the limit -> high priority, credit-focused queries (data-driven)
+        minfin = [t for t in data["research_targets"] if t["entity"] == "MinFin"]
+        self.assertTrue(minfin)
+        self.assertEqual(minfin[0]["asset_class"], "bond")
+        self.assertEqual(minfin[0]["priority"], "high")
+        self.assertTrue(any("кредитный рейтинг" in q for q in minfin[0]["search_queries"]))
+
     def test_bond_calendar_lists_coupons_and_ladder(self) -> None:
         service = InvestorService()
 

@@ -59,6 +59,25 @@ def _asset_class_label(asset_class: str) -> str:
     }.get(asset_class, asset_class)
 
 
+def _sector_label(sector: str) -> str:
+    return {
+        "financial": "Финансы",
+        "energy": "Нефтегаз/энергетика",
+        "materials": "Металлы и материалы",
+        "it": "IT",
+        "consumer": "Потребительский сектор",
+        "telecom": "Телеком",
+        "utilities": "Электроэнергетика/ЖКХ",
+        "real_estate": "Недвижимость",
+        "government": "Госбумаги",
+        "health_care": "Здравоохранение",
+    }.get(sector, sector)
+
+
+# Issuer names that are cash/currency placeholders, not real news subjects.
+_NON_ISSUER = {"", "Cash", "Денежный рынок", "Российский рубль", "Доллар США", "Евро", "Dollar", "Euro"}
+
+
 @dataclass
 class InvestorService:
     broker: BrokerAdapter = field(default_factory=MockBrokerAdapter)
@@ -434,22 +453,134 @@ class InvestorService:
         account_ids: list[str] | None = None,
         importance_min: str = "medium",
     ) -> dict[str, Any]:
-        order = {"low": 0, "medium": 1, "high": 2}
-        threshold = order.get(importance_min, 0)
-        events = [
-            event for event in self._mock_events()
-            if order.get(event.get("importance", "low"), 0) >= threshold
-        ]
-        return ok_response(
-            "Новостная выжимка подготовлена.",
-            {
-                "period": period,
-                "events": events,
-                "summary": "Пока используется mock-лента. Реальные новости будут отдельным источником.",
-                "importance_min": importance_min,
-            },
-            data_status="cached",
+        """Dynamic research brief: WHAT the assistant should web-search, derived from the
+        current portfolio (concentrations, asset mix, goals). The server does not fetch
+        news itself — it computes targets + tailored search queries; the client searches.
+        """
+        positions = self._positions(account_ids)
+        total = sum(position.current_value.amount for position in positions)
+        if not total:
+            return ok_response(
+                "Портфель пуст — искать нечего.",
+                {"period": period, "research_targets": [], "guidance": "", "events": []},
+                data_status=self._positions_status,
+            )
+
+        issuer_value: dict[str, float] = defaultdict(float)
+        issuer_classes: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+        sector_value: dict[str, float] = defaultdict(float)
+        bond_value = 0.0
+        for position in positions:
+            value = position.current_value.amount
+            instrument = position.instrument
+            issuer_value[instrument.issuer] += value
+            issuer_classes[instrument.issuer][instrument.asset_class] += value
+            sector_value[instrument.sector] += value
+            if instrument.asset_class == "bond":
+                bond_value += value
+
+        issuer_limit = float(self.profile.limits.get("max_single_issuer_percent", 15))
+        sector_limit = float(self.profile.limits.get("max_single_sector_percent", 30))
+        bond_share = bond_value / total * 100
+
+        targets: list[dict[str, Any]] = []
+
+        # --- Issuers: over the limit, or simply a top exposure (>= 5%) ---
+        for issuer, value in sorted(issuer_value.items(), key=lambda item: -item[1]):
+            if issuer in _NON_ISSUER:
+                continue
+            share = value / total * 100
+            over = share > issuer_limit
+            if not over and share < 5:
+                continue
+            dominant = max(issuer_classes[issuer], key=issuer_classes[issuer].get)
+            if dominant == "bond":
+                queries = [
+                    f"{issuer} кредитный рейтинг",
+                    f"{issuer} облигации новости дефолт реструктуризация",
+                    f"{issuer} финансовая отчётность долговая нагрузка",
+                ]
+                focus = "облигации → кредитный/дефолтный риск, рейтинги"
+            elif dominant == "stock":
+                queries = [
+                    f"{issuer} отчётность прибыль прогноз",
+                    f"{issuer} дивиденды новости",
+                    f"{issuer} санкции регуляторные риски",
+                ]
+                focus = "акции → отчётность, дивиденды, корпоративные события"
+            else:
+                queries = [f"{issuer} новости"]
+                focus = "следить за основными событиями"
+            limit_note = f" при лимите эмитента {issuer_limit:.0f}%" if over else ""
+            targets.append({
+                "entity": issuer,
+                "kind": "issuer",
+                "asset_class": dominant,
+                "portfolio_share_percent": round(share, 2),
+                "priority": "high" if over else "medium",
+                "why": f"{round(share, 1)}% портфеля{limit_note}; {focus}",
+                "search_queries": queries,
+            })
+            if sum(1 for t in targets if t["kind"] == "issuer") >= 6:
+                break
+
+        # --- Sectors above the limit ---
+        for sector, value in sorted(sector_value.items(), key=lambda item: -item[1]):
+            if sector in {"unknown", "cash"}:
+                continue
+            share = value / total * 100
+            if share <= sector_limit:
+                continue
+            label = _sector_label(sector)
+            targets.append({
+                "entity": label,
+                "kind": "sector",
+                "portfolio_share_percent": round(share, 2),
+                "priority": "medium",
+                "why": f"{round(share, 1)}% портфеля при лимите сектора {sector_limit:.0f}%",
+                "search_queries": [f"{label} сектор РФ новости 2026", f"{label} регулирование перспективы"],
+            })
+
+        # --- Macro: rate sensitivity for a bond-heavy book ---
+        if bond_share > 40:
+            targets.append({
+                "entity": "Ключевая ставка ЦБ РФ",
+                "kind": "macro",
+                "portfolio_share_percent": round(bond_share, 2),
+                "priority": "high" if bond_share > 60 else "medium",
+                "why": f"{round(bond_share)}% портфеля в облигациях — чувствительность к ставке",
+                "search_queries": ["ключевая ставка ЦБ РФ решение прогноз", "инфляция РФ динамика ожидания"],
+            })
+
+        top_issuers = [t["entity"] for t in targets if t["kind"] == "issuer"][:2]
+        guidance_bits = []
+        if bond_share > 50:
+            guidance_bits.append(f"портфель на {round(bond_share)}% в облигациях")
+        if top_issuers:
+            guidance_bits.append("ключевая концентрация: " + ", ".join(top_issuers))
+        guidance = (
+            ("Фокус: " + "; ".join(guidance_bits) + ". ") if guidance_bits else ""
+        ) + "Приоритет высоким (high) целям."
+
+        data = {
+            "period": period,
+            "as_of": utc_now_iso(),
+            "portfolio_value": Money(round(total, 2), self.profile.base_currency).to_dict(),
+            "bond_share_percent": round(bond_share, 2),
+            "research_targets": targets,
+            "guidance": guidance,
+            "events": [],  # the server does not fetch news; the client searches research_targets
+            "instruction_for_assistant": (
+                "Сделай веб-поиск по search_queries каждой цели (начни с priority=high), "
+                "затем кратко изложи влияние на ЭТОТ портфель: какие бумаги, какая доля затронута, "
+                "почему важно и что можно рассмотреть."
+            ),
+        }
+        summary = (
+            f"Бриф для поиска новостей: {len(targets)} целей. {guidance} "
+            "Найди по ним свежие новости в вебе и оцени влияние на портфель."
         )
+        return ok_response(summary, data, data_status=self._positions_status)
 
     def recommend_next_action(
         self,
