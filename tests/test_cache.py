@@ -14,6 +14,7 @@ class CountingBroker:
         self._inner = MockBrokerAdapter()
         self.positions_calls = 0
         self.accounts_calls = 0
+        self.operations_calls = 0
         self.fail = False
 
     def list_accounts(self):
@@ -27,6 +28,9 @@ class CountingBroker:
         return self._inner.get_positions(account_ids)
 
     def get_operations(self, account_ids=None):
+        self.operations_calls += 1
+        if self.fail:
+            raise RuntimeError("broker down")
         return self._inner.get_operations(account_ids)
 
 
@@ -81,6 +85,38 @@ class CacheTest(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(result["data_status"], "stale")
         self.assertGreater(result["data"]["total_value"]["amount"], 0)
+
+    def test_operations_served_from_cache(self) -> None:
+        broker = CountingBroker()
+        service = InvestorService(broker=broker)
+
+        first = service.get_operations("2026-06-01", "2026-06-30")
+        second = service.get_operations("2026-06-01", "2026-06-30")
+
+        self.assertEqual(broker.operations_calls, 1)  # only one broker hit
+        self.assertEqual(first["data_status"], "fresh")
+        self.assertEqual(second["data_status"], "cached")
+        self.assertGreaterEqual(first["data"]["total_count"], 1)
+
+    def test_sync_refreshes_operations(self) -> None:
+        broker = CountingBroker()
+        service = InvestorService(broker=broker)
+
+        service.get_operations("2026-06-01", "2026-06-30")  # call 1, caches
+        service.sync_data("full")  # forces refresh -> call 2
+
+        self.assertEqual(broker.operations_calls, 2)
+
+    def test_operations_persist_across_instances(self) -> None:
+        storage = Storage(":memory:")
+        broker1 = CountingBroker()
+        InvestorService(broker=broker1, storage=storage).get_operations("2026-06-01", "2026-06-30")
+        self.assertEqual(broker1.operations_calls, 1)
+
+        broker2 = CountingBroker()
+        result = InvestorService(broker=broker2, storage=storage).get_operations("2026-06-01", "2026-06-30")
+        self.assertEqual(broker2.operations_calls, 0)  # served from persisted cache
+        self.assertEqual(result["data_status"], "cached")
 
     def test_persisted_cache_reused_by_fresh_service(self) -> None:
         storage = Storage(":memory:")

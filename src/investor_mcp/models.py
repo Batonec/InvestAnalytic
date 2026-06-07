@@ -132,6 +132,19 @@ class Operation:
         result["amount"] = self.amount.to_dict()
         return result
 
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "Operation":
+        return cls(
+            operation_id=data["operation_id"],
+            account_id=data["account_id"],
+            date=data["date"],
+            operation_type=data.get("operation_type", ""),
+            instrument_id=data.get("instrument_id"),
+            quantity=float(data.get("quantity", 0)),
+            amount=Money.from_dict(data["amount"]),
+            description=data.get("description", ""),
+        )
+
 
 @dataclass
 class InvestorProfile:

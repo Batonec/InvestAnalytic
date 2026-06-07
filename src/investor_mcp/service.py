@@ -7,7 +7,7 @@ from datetime import date, timedelta
 from typing import Any
 
 from .adapters import BrokerAdapter, MockBrokerAdapter
-from .models import Account, InvestorProfile, Money, Position, utc_now_iso
+from .models import Account, InvestorProfile, Money, Operation, Position, utc_now_iso
 from .storage import Storage
 
 
@@ -73,7 +73,9 @@ class InvestorService:
     cache_ttl_seconds: int = 86400
     _positions_cache: tuple[float, list[Position]] | None = field(default=None, repr=False)
     _accounts_cache: tuple[float, list[Account]] | None = field(default=None, repr=False)
+    _operations_cache: tuple[float, list[Operation]] | None = field(default=None, repr=False)
     _positions_status: str = field(default="fresh", repr=False)
+    _operations_status: str = field(default="fresh", repr=False)
 
     def __post_init__(self) -> None:
         """Hydrate persisted singletons from storage, if attached."""
@@ -98,10 +100,10 @@ class InvestorService:
         to_date: str | None = None,
     ) -> dict[str, Any]:
         started = utc_now_iso()
-        # Sync = force-refresh the cached composition data.
+        # Sync = force-refresh the cached data: accounts, portfolio AND operations.
         accounts = self._cached_accounts(force=True)
         positions = self._all_positions(force=True)
-        operations = self.broker.get_operations(account_ids)
+        operations = self._all_operations(force=True)
         finished = utc_now_iso()
         stamp = started.replace("-", "").replace(":", "").replace("T", "_").rstrip("Z")
         self.last_sync = {
@@ -283,10 +285,13 @@ class InvestorService:
                 {"from_date": from_date, "to_date": to_date},
             )
         effective_accounts = account_ids or self._effective_account_ids()
+        wanted_accounts = set(effective_accounts)
         instrument_query = self._ref_to_query(instrument).upper() if instrument else None
         types = {t.lower() for t in operation_types} if operation_types else None
         operations = []
-        for operation in self.broker.get_operations(effective_accounts):
+        for operation in self._all_operations():
+            if operation.account_id not in wanted_accounts:
+                continue
             if not (from_date <= operation.date <= to_date):
                 continue
             if types and operation.operation_type.lower() not in types:
@@ -302,6 +307,7 @@ class InvestorService:
                 "total_count": len(operations),
                 "resource": f"investor://operations/{account_key}/{from_date}/{to_date}",
             },
+            data_status=self._operations_status,
         )
 
     def get_instrument(
@@ -1057,6 +1063,47 @@ class InvestorService:
                     positions = [Position.from_dict(d) for d in cached.get("positions", [])]
                     self._positions_cache = (ts, positions)
                     return positions
+        return None
+
+    def _all_operations(self, force: bool = False) -> list[Operation]:
+        """All operations, served from cache within TTL (same policy as positions)."""
+        now = time.time()
+        if not force:
+            cached = self._read_operations_cache(now)
+            if cached is not None:
+                self._operations_status = "cached"
+                return cached
+        try:
+            operations = self.broker.get_operations(None)
+        except Exception:
+            stale = self._read_operations_cache(now, ignore_ttl=True)
+            if stale is not None:
+                self._operations_status = "stale"
+                return stale
+            raise
+        self._operations_cache = (now, operations)
+        self._operations_status = "fresh"
+        if self.storage is not None:
+            self.storage.set_setting(
+                "operations_cache",
+                {"fetched_at": utc_now_iso(), "fetched_at_epoch": now,
+                 "operations": [o.to_dict() for o in operations]},
+            )
+        return operations
+
+    def _read_operations_cache(self, now: float, ignore_ttl: bool = False) -> list[Operation] | None:
+        if self._operations_cache is not None:
+            ts, operations = self._operations_cache
+            if ignore_ttl or now - ts < self.cache_ttl_seconds:
+                return operations
+        if self.storage is not None:
+            cached = self.storage.get_setting("operations_cache")
+            if cached:
+                ts = float(cached.get("fetched_at_epoch", 0))
+                if ignore_ttl or now - ts < self.cache_ttl_seconds:
+                    operations = [Operation.from_dict(d) for d in cached.get("operations", [])]
+                    self._operations_cache = (ts, operations)
+                    return operations
         return None
 
     def _cached_accounts(self, force: bool = False) -> list[Account]:
