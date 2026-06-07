@@ -19,3 +19,6 @@ investor-streisand-*
 .claude/
 .agents/
 
+
+# static-site build output
+site/
